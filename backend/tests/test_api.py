@@ -1,7 +1,3 @@
-"""Интеграционные тесты API (нужен запущенный PostgreSQL: docker compose up -d db).
-
-    cd backend && pytest
-"""
 import uuid
 from datetime import date, timedelta
 
@@ -80,7 +76,7 @@ def test_login_wrong_password_and_lockout(athlete):
         r = c.post("/api/auth/login/", {"contact": athlete.email, "password": "wrong-pass"}, format="json")
         assert r.status_code == 401
     r = c.post("/api/auth/login/", {"contact": athlete.email, "password": PASSWORD}, format="json")
-    assert r.status_code == 429  # заблокирован на 15 минут
+    assert r.status_code == 429
 
 
 def test_s1_ok_assessment_30_days(athlete):
@@ -130,7 +126,7 @@ def test_draft_roundtrip(athlete):
     assert athlete.put("/api/assessments/draft/", {"data": {"tolerance": 4, "step": 2}}, format="json").status_code == 200
     assert athlete.get("/api/assessments/draft/").data["data"]["tolerance"] == 4
     assert athlete.put("/api/assessments/draft/", {"data": {"hack": 1}}, format="json").status_code == 400
-    post_assessment(athlete)  # завершение удаляет черновик
+    post_assessment(athlete)
     assert athlete.get("/api/assessments/draft/").status_code == 404
 
 
@@ -176,8 +172,8 @@ def test_s19_delete_account(athlete):
 
 
 def test_s16_early_assessment_reschedules(athlete):
-    post_assessment(athlete, q6_1=True)  # красный флаг -> 7 дней
+    post_assessment(athlete, q6_1=True)
     sch = athlete.get("/api/reminders/settings/").data
     first_due = sch["due_date"]
-    post_assessment(athlete)  # новая самооценка пересчитывает срок (30 дней)
+    post_assessment(athlete)
     assert athlete.get("/api/reminders/settings/").data["due_date"] != first_due

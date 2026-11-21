@@ -1,0 +1,26 @@
+{
+  "name": "sport-app",
+  "version": "1.0.0",
+  "description": "Монорепозиторий: `backend/` — Сергей, `frontend/` — Марват и Артем.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KrasnoperovSergey241-3210/sport-app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/KrasnoperovSergey241-3210/sport-app/issues"
+  },
+  "homepage": "https://github.com/KrasnoperovSergey241-3210/sport-app#readme",
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
