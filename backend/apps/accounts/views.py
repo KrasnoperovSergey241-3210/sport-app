@@ -8,6 +8,7 @@ from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -24,6 +25,7 @@ from .serializers import (
     LoginSerializer,
     OtpVerifySerializer,
     PasswordSerializer,
+    RegisterSerializer,
     RegisterStartSerializer,
     RegisterVerifySerializer,
     ResetConfirmSerializer,
@@ -36,6 +38,9 @@ class PublicView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
 
+    def get_authenticate_header(self, request):
+        return JWTAuthentication().authenticate_header(request)
+
 
 class OtpMixin:
     def otp_response(self, code=None):
@@ -43,6 +48,28 @@ class OtpMixin:
         if code and settings.DEV_ECHO_OTP:  # только для разработки
             data["debug_code"] = code
         return Response(data)
+
+
+def _check_registration_age(birth):
+    if age_on(birth, timezone.localdate()) < 18:
+        raise DomainError(get_active_settings().data["texts"]["age_restriction"], "age_restriction")
+
+
+def _registration_response(request, user):
+    audit(request, "register", "user", user.code, actor=user)
+    return Response(svc.tokens_for(user), status=status.HTTP_201_CREATED)
+
+
+class RegisterView(PublicView):
+    throttle_scope = "auth"
+
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        _check_registration_age(data["birth_date"])
+        user = svc.register_athlete("email", data["email"].lower(), data["password"], data["birth_date"])
+        return _registration_response(request, user)
 
 
 class RegisterStartView(OtpMixin, PublicView):
@@ -55,8 +82,7 @@ class RegisterStartView(OtpMixin, PublicView):
         s.is_valid(raise_exception=True)
         kind, contact = svc.normalize_contact(s.validated_data["contact"])
         birth = s.validated_data["birth_date"]
-        if age_on(birth, timezone.localdate()) < 18:
-            raise DomainError(get_active_settings().data["texts"]["age_restriction"], "age_restriction")
+        _check_registration_age(birth)
         code = None
         ident = svc.find_identity(kind, contact)
         if not ident or not svc.User.objects.filter(code=ident.code).exists():
@@ -76,14 +102,12 @@ class RegisterVerifyView(PublicView):
         kind, contact = svc.normalize_contact(s.validated_data["contact"])
         otp = svc.verify_otp(contact, "register", s.validated_data["code"])
         birth = date.fromisoformat(otp.payload["birth_date"])
-        if age_on(birth, timezone.localdate()) < 18:
-            raise DomainError(get_active_settings().data["texts"]["age_restriction"], "age_restriction")
+        _check_registration_age(birth)
         try:
             user = svc.register_athlete(kind, contact, s.validated_data["password"], birth)
         except Exception:
             raise ValidationError({"contact": ["Не удалось завершить регистрацию"]})
-        audit(request, "register", "user", user.code, actor=user)
-        return Response(svc.tokens_for(user), status=status.HTTP_201_CREATED)
+        return _registration_response(request, user)
 
 
 class LoginView(PublicView):

@@ -163,15 +163,16 @@ export class SportApiClient {
             body: JSON.stringify({ refresh }),
           });
           if (!res.ok) {
-            this.storage.clearTokens();
-            this.onUnauthorized?.();
-            return null;
+            if (res.status === 400 || res.status === 401) {
+              this.storage.clearTokens();
+              this.onUnauthorized?.();
+              return null;
+            }
+            throw await this.parseError(res);
           }
           const data = (await res.json()) as { access: string; refresh?: string };
           this.storage.setTokens({ access: data.access, refresh: data.refresh ?? refresh });
           return data.access;
-        } catch {
-          return null;
         } finally {
           this.refreshPromise = null;
         }
@@ -238,6 +239,16 @@ export class SportApiClient {
     return this.request<{ version: number; data: Record<string, unknown> }>("/api/settings/", {
       auth: false,
     });
+  }
+
+  async register(payload: { email: string; password: string; birth_date: string; consent: boolean }) {
+    const data = await this.request<AuthTokensResponse>("/api/auth/register/", {
+      method: "POST",
+      body: payload,
+      auth: false,
+    });
+    this.storage.setTokens({ access: data.access, refresh: data.refresh });
+    return data;
   }
 
   registerStart(payload: { contact: string; birth_date: string; consent: boolean }) {

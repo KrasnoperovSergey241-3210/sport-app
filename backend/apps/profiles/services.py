@@ -24,7 +24,7 @@ def _display(profile: AthleteProfile, field: str) -> str:
 @transaction.atomic
 def apply_profile_update(user, values: dict, changed_at=None) -> AthleteProfile:
     """Обновить профиль и записать изменения отслеживаемых полей в историю."""
-    profile = AthleteProfile.objects.select_for_update().select_related("sport").get(user=user)
+    profile = AthleteProfile.objects.select_for_update(of=("self",)).select_related("sport").get(user=user)
     before = {f: _display(profile, f) for f in TRACKED}
     for key, val in values.items():
         setattr(profile, key, val)

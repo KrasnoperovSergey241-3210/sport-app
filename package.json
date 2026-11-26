@@ -4,7 +4,11 @@
   "description": "Монорепозиторий: `backend/` — Сергей, `frontend/` — Марват и Артем.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite --config frontend/vite.config.mts",
+    "build": "vite build --config frontend/vite.config.mts",
+    "preview": "vite preview --config frontend/vite.config.mts",
+    "typecheck": "vue-tsc --noEmit -p frontend/tsconfig.json",
+    "test": "tsx --test frontend/tests/*.test.ts"
   },
   "repository": {
     "type": "git",
@@ -20,7 +24,13 @@
   "homepage": "https://github.com/KrasnoperovSergey241-3210/sport-app#readme",
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@vitejs/plugin-vue": "^6.0.2",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7",
+    "vue-tsc": "^3.3.14"
+  },
+  "dependencies": {
+    "vue": "^3.5.46"
   }
 }
