@@ -10,7 +10,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.accounts.models import User
 from apps.assessments.models import SelfAssessment
 from apps.assessments.scoring import YESNO_FLAG_QUESTIONS, answer_key
-from apps.pii.models import Identity
+from apps.pii.models import Identity, OneTimeCode
 from apps.profiles.models import Sport
 
 pytestmark = pytest.mark.django_db(databases=["default", "pii"], transaction=True)
@@ -21,8 +21,9 @@ PASSWORD = "Str0ng-pass-123"
 def athlete():
     c = APIClient()
     email = f"a{uuid.uuid4().hex[:8]}@example.com"
-    r = c.post("/api/auth/register/start/", {"contact": email, "birth_date": "1998-05-10", "consent": True}, format="json")
-    r = c.post("/api/auth/register/verify/", {"contact": email, "code": r.data["debug_code"], "password": PASSWORD}, format="json")
+    r = c.post("/api/auth/register/", {
+        "email": email, "password": PASSWORD, "birth_date": "1998-05-10", "consent": True,
+    }, format="json")
     assert r.status_code == 201, r.data
     c.credentials(HTTP_AUTHORIZATION="Bearer " + r.data["access"])
     c.email = email
@@ -51,16 +52,39 @@ def post_assessment(c, **over):
     return c.post("/api/assessments/", {"client_uuid": str(uuid.uuid4()), "answers": answers(**over)}, format="json")
 
 
-def test_s14_under_18_rejected():
+def test_register_email_and_password_without_otp():
+    c = APIClient()
+    email = "athlete@example.com"
+    data = {"email": email.upper(), "password": PASSWORD, "birth_date": "1998-05-10", "consent": True}
+    response = c.post("/api/auth/register/", data, format="json")
+    assert response.status_code == 201, response.data
+    assert Identity.objects.get().email == email
+    assert not OneTimeCode.objects.exists()
+
+    duplicate = c.post("/api/auth/register/", {**data, "email": email, "password": "Different-p4ssword"}, format="json")
+    assert duplicate.status_code == 409
+    assert User.objects.count() == Identity.objects.count() == 1
+    login = c.post("/api/auth/login/", {"contact": email, "password": PASSWORD}, format="json")
+    assert login.status_code == 200
+    assert login.data["user_code"] == response.data["user_code"]
+
+
+@pytest.mark.parametrize(("endpoint", "email_field"), [("register", "email"), ("register/start", "contact")])
+def test_s14_under_18_rejected(endpoint, email_field):
     c = APIClient()
     young = (date.today() - timedelta(days=365 * 17)).isoformat()
-    r = c.post("/api/auth/register/start/", {"contact": "kid@example.com", "birth_date": young, "consent": True}, format="json")
+    r = c.post(f"/api/auth/{endpoint}/", {
+        email_field: "kid@example.com", "password": PASSWORD, "birth_date": young, "consent": True,
+    }, format="json")
     assert r.status_code == 400 and r.data["code"] == "age_restriction"
     assert r.data["detail"] == "Приложение предназначено для спортсменов 18 лет и старше"
 
 
-def test_consent_required():
-    r = APIClient().post("/api/auth/register/start/", {"contact": "x@example.com", "birth_date": "1990-01-01", "consent": False}, format="json")
+@pytest.mark.parametrize(("endpoint", "email_field"), [("register", "email"), ("register/start", "contact")])
+def test_consent_required(endpoint, email_field):
+    r = APIClient().post(f"/api/auth/{endpoint}/", {
+        email_field: "x@example.com", "password": PASSWORD, "birth_date": "1990-01-01", "consent": False,
+    }, format="json")
     assert r.status_code == 400
 
 
@@ -85,12 +109,13 @@ def test_s1_ok_assessment_30_days(athlete):
     assert r.data["kerdo_index"] == -15.6 and r.data["kerdo_class"] == "vagotonia"
     assert r.data["red_flag"] is False and r.data["restq"] is None
     assert r.data["result"]["kerdo"]["title"] == "Ваготония"
-    assert date.fromisoformat(r.data["next_due_date"]) - date.today() in (timedelta(days=30), timedelta(days=29), timedelta(days=31))
+    assert date.fromisoformat(r.json()["next_due_date"]) - date.today() in (timedelta(days=30), timedelta(days=29), timedelta(days=31))
 
 
 def test_s3_restq_required_and_scored(athlete):
     r = post_assessment(athlete, tolerance=3)
-    assert r.status_code == 400 and "restq" in r.data["errors"]
+    assert r.status_code == 400
+    assert "restq" in r.json()["errors"]["answers"]
     restq = {"timing": "before", "answers": {str(i): 2 for i in range(1, 78)}}
     r = post_assessment(athlete, tolerance=3, restq=restq)
     assert r.status_code == 201, r.data

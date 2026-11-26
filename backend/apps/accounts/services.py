@@ -17,6 +17,7 @@ from rest_framework.exceptions import Throttled, ValidationError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.core.errors import DomainError
 from apps.pii.models import Identity, OneTimeCode
 
 from .models import Consent, User
@@ -120,24 +121,25 @@ def verify_otp(contact, purpose, code) -> OneTimeCode:
 
 
 # ---------- регистрация / удаление ----------
+@transaction.atomic(using="pii")
 def register_athlete(kind, contact, password, birth_date) -> User:
     from apps.profiles.models import AthleteProfile
 
-    # «осиротевшая» запись ПДн (аккаунт уже удалён) не должна блокировать повторную регистрацию
-    orphan = find_identity(kind, contact)
-    if orphan and not User.objects.filter(code=orphan.code).exists():
-        orphan.delete()
-
     code = uuid.uuid4()
-    Identity.objects.create(code=code, **{kind: contact})
-    try:
-        with transaction.atomic():
-            user = User.objects.create_user(username=str(code), password=password, code=code, role=User.Role.ATHLETE)
-            Consent.objects.create(user=user, policy_version=settings.POLICY_VERSION)
-            AthleteProfile.objects.create(user=user, birth_date=birth_date)
-    except Exception:
-        Identity.objects.filter(code=code).delete()
-        raise
+    identity, created = Identity.objects.select_for_update().get_or_create(
+        **{kind: contact}, defaults={"code": code}
+    )
+    # «осиротевшая» запись ПДн (аккаунт уже удалён) не должна блокировать повторную регистрацию
+    if not created:
+        if User.objects.filter(code=identity.code).exists():
+            raise DomainError("Не удалось создать аккаунт. Если вы уже зарегистрированы, войдите в аккаунт.", "contact_in_use", 409)
+        identity.delete()
+        Identity.objects.create(code=code, **{kind: contact})
+
+    with transaction.atomic():
+        user = User.objects.create_user(username=str(code), password=password, code=code, role=User.Role.ATHLETE)
+        Consent.objects.create(user=user, policy_version=settings.POLICY_VERSION)
+        AthleteProfile.objects.create(user=user, birth_date=birth_date)
     return user
 
 

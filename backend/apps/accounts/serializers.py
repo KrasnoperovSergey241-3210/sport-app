@@ -4,8 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 
-class RegisterStartSerializer(serializers.Serializer):
-    contact = serializers.CharField(max_length=254)
+class RegistrationDetailsSerializer(serializers.Serializer):
     birth_date = serializers.DateField()
     consent = serializers.BooleanField()
 
@@ -20,14 +19,19 @@ class RegisterStartSerializer(serializers.Serializer):
         return v
 
 
+class RegisterStartSerializer(RegistrationDetailsSerializer):
+    contact = serializers.CharField(max_length=254)
+
+
+class RegisterSerializer(RegistrationDetailsSerializer):
+    email = serializers.EmailField(max_length=254)
+    password = serializers.CharField(write_only=True, max_length=128, validators=[validate_password])
+
+
 class RegisterVerifySerializer(serializers.Serializer):
     contact = serializers.CharField(max_length=254)
     code = serializers.CharField(max_length=10)
-    password = serializers.CharField(write_only=True, max_length=128)
-
-    def validate_password(self, v):
-        validate_password(v)
-        return v
+    password = serializers.CharField(write_only=True, max_length=128, validators=[validate_password])
 
 
 class LoginSerializer(serializers.Serializer):
